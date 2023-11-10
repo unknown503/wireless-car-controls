@@ -1,6 +1,11 @@
 #include <WiFiManager.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#define SOUND_SPEED 0.034
+#define MAX_FORWARD_DISTANCE 25
+
+byte trigger = 12;
+byte echo = 13;
 
 byte ENA_pin = 14;
 byte IN1 = 27;
@@ -13,7 +18,7 @@ const byte pwm_channel = 0;
 const byte frequency = 30000;
 const byte resolution = 8;
 
-const char* apiEndpoint = "http://192.168.1.2:3000/api/data";
+const char* apiEndpoint = "https://wireless-car-controls.vercel.app/api/data";
 
 enum STATES {
   STOP,
@@ -31,6 +36,9 @@ void setup() {
   pinMode(IN2, OUTPUT);
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
+
+  pinMode(echo, INPUT);
+  pinMode(trigger, OUTPUT);
 
   ledcSetup(pwm_channel, frequency, resolution);
   ledcAttachPin(ENA_pin, pwm_channel);
@@ -89,6 +97,7 @@ void move(int direction, int speed) {
 
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
+    int distance = getFrontDistance();
     String json = httpGETRequest(apiEndpoint);
 
     DynamicJsonDocument doc(100);
@@ -98,7 +107,11 @@ void loop() {
     byte speed = doc["speed"];
     byte movement = doc["movement"];
 
-    move(movement, speed);
+    if (distance <= MAX_FORWARD_DISTANCE && movement == FORWARD) {
+      move(STOP, speed);
+    } else {
+      move(movement, speed);
+    }
   } else {
     Serial.println("WiFi Disconnected");
   }
@@ -119,7 +132,21 @@ String httpGETRequest(const char* endpoint) {
   if (httpResponseCode > 0) {
     payload = http.getString();
   }
-  
+
   http.end();
   return payload;
+}
+
+int getFrontDistance() {
+  digitalWrite(trigger, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigger, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigger, LOW);
+
+  int pulse = pulseIn(echo, HIGH);
+
+  int distance = pulse * SOUND_SPEED / 2;
+  Serial.println("Distance " + String(distance));
+  return distance;
 }
